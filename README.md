@@ -38,11 +38,19 @@ See `scripts/shop-mcp-server.ts` for MCP-focused notes.
 
 ### 3. Database schema
 
-This repo uses **`prisma db push`** (there is no `prisma/migrations` folder checked in):
+**New database / production:** apply migrations (creates tables with `DECIMAL` money columns):
+
+```bash
+npm run db:migrate
+```
+
+**Local iterative dev** (sync schema without migration history):
 
 ```bash
 npm run db:push
 ```
+
+If you already had `FLOAT` money columns from an older schema, `db push` will align them to `DECIMAL(12,2)`.
 
 ### 4. Seed demo products
 
@@ -81,6 +89,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run lint` | ESLint |
 | `npm run db:generate` | Regenerate Prisma client |
 | `npm run db:studio` | Open Prisma Studio |
+| `npm run db:migrate` | `prisma migrate deploy` (production / CI) |
+| `npm run db:migrate:dev` | `prisma migrate dev` (create/apply migrations locally) |
 | `npm run build` | `prisma generate` + production Next.js build |
 | `npm start` | Run the production server (after `build`) |
 

@@ -1,6 +1,9 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 
 const CreateOrderBodySchema = z.object({
@@ -12,18 +15,31 @@ const CreateOrderBodySchema = z.object({
 });
 
 function makeOrderNumber() {
-  const stamp = Date.now().toString(36).toUpperCase();
-  const rand = Math.floor(Math.random() * 9999)
-    .toString()
-    .padStart(4, "0");
-  return `ORD-${stamp}-${rand}`;
+  return `ORD-${randomUUID().replace(/-/g, "").toUpperCase()}`;
 }
 
 export async function POST(req: Request) {
+  let json: unknown;
   try {
-    const json = await req.json();
-    const input = CreateOrderBodySchema.parse(json);
+    json = await req.json();
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    return NextResponse.json(
+      { error: "Invalid JSON body", detail },
+      { status: 400 },
+    );
+  }
 
+  const parsed = CreateOrderBodySchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid order payload", issues: parsed.error.flatten() },
+      { status: 400 },
+    );
+  }
+  const input = parsed.data;
+
+  try {
     const product = await prisma.product.findUnique({
       where: { sku: input.sku },
     });
@@ -36,7 +52,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Product is out of stock" }, { status: 409 });
     }
 
-    const totalUsd = product.priceUsd * input.quantity;
+    const totalUsd = product.priceUsd.mul(new Prisma.Decimal(input.quantity));
     const order = await prisma.order.create({
       data: {
         orderNumber: makeOrderNumber(),
@@ -68,23 +84,17 @@ export async function POST(req: Request) {
         orderNumber: order.orderNumber,
         status: order.status,
         customerName: order.customerName,
-        totalUsd: order.totalUsd,
+        totalUsd: order.totalUsd.toNumber(),
         items: order.items.map((item) => ({
           sku: item.product.sku,
           name: item.product.name,
           quantity: item.quantity,
-          unitPriceUsd: item.unitPriceUsd,
-          lineTotalUsd: item.lineTotalUsd,
+          unitPriceUsd: item.unitPriceUsd.toNumber(),
+          lineTotalUsd: item.lineTotalUsd.toNumber(),
         })),
       },
     });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: "Invalid order payload", issues: error.flatten() },
-        { status: 400 },
-      );
-    }
     console.error("create order failed", error);
     return NextResponse.json({ error: "Could not create order" }, { status: 500 });
   }

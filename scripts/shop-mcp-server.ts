@@ -45,14 +45,19 @@ async function createShopOrder(input: {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  console.log("createShopOrder response:", res);
-  const data = (await res.json()) as unknown;
+  const text = await res.text();
   if (!res.ok) {
     throw new Error(
-      `POST /api/shop/orders failed: ${res.status} ${res.statusText} - ${JSON.stringify(data)}`,
+      `POST /api/shop/orders failed: ${res.status} ${res.statusText}${text ? ` — ${text.slice(0, 500)}` : ""}`,
     );
   }
-  return data;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(
+      `POST /api/shop/orders returned OK but invalid JSON: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
+    );
+  }
 }
 
 function createServer(): McpServer {
