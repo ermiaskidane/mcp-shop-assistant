@@ -17,6 +17,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import type { Request, Response } from "express";
+import { z } from "zod";
 
 const SHOP_MCP_PORT = Number(process.env.SHOP_MCP_PORT ?? "3333");
 const SHOP_APP_ORIGIN = (process.env.SHOP_APP_ORIGIN ?? "http://127.0.0.1:3000").replace(
@@ -30,6 +31,28 @@ async function fetchShopProducts(): Promise<unknown> {
     throw new Error(`GET /api/shop/products failed: ${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+async function createShopOrder(input: {
+  sku: string;
+  quantity?: number;
+  customerName: string;
+  customerPhone?: string;
+  notes?: string;
+}): Promise<unknown> {
+  const res = await fetch(`${SHOP_APP_ORIGIN}/api/shop/orders`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  console.log("createShopOrder response:", res);
+  const data = (await res.json()) as unknown;
+  if (!res.ok) {
+    throw new Error(
+      `POST /api/shop/orders failed: ${res.status} ${res.statusText} - ${JSON.stringify(data)}`,
+    );
+  }
+  return data;
 }
 
 function createServer(): McpServer {
@@ -64,6 +87,51 @@ function createServer(): McpServer {
             {
               type: "text" as const,
               text: `Could not load shop products. Is Next.js running at ${SHOP_APP_ORIGIN}? ${message}`,
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_shop_order",
+    {
+      description:
+        "Creates an order for a product by SKU. Use when the user confirms they want to buy.",
+      inputSchema: {
+        sku: z.string().min(1),
+        quantity: z.number().int().positive().optional(),
+        customerName: z.string().min(1),
+        customerPhone: z.string().min(1).optional(),
+        notes: z.string().optional(),
+      },
+    },
+    async ({ sku, quantity, customerName, customerPhone, notes }) => {
+      try {
+        const data = await createShopOrder({
+          sku,
+          quantity,
+          customerName,
+          customerPhone,
+          notes,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(data, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: `Could not create shop order. Is Next.js running at ${SHOP_APP_ORIGIN}? ${message}`,
             },
           ],
         };
